@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Simulador PMC — FANUC Ladder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Archivo:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-panel:#161a16;
+    --bg-deep:#0c0e0c;
+    --steel:#2a2f2a;
+    --steel-light:#3a413a;
+    --fanuc-yellow:#f2c200;
+    --fanuc-yellow-dim:#a8890a;
+    --live:#39e07a;
+    --live-dim:#164d2c;
+    --alarm:#e0393f;
+    --alarm-dim:#4d1418;
+    --rail:#5b6b5b;
+    --text-hi:#eef2ea;
+    --text-mid:#9caa9c;
+    --text-dim:#5f6b5f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg-deep);
+    font-family:'Archivo',sans-serif;
+    color:var(--text-hi);
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  .frame{
+    max-width:1180px;
+    margin:0 auto;
+    padding:18px 18px 40px;
+  }
+
+  /* HEADER — bezel style */
+  .bezel{
+    background:linear-gradient(180deg,#232823,#181c18);
+    border:1px solid var(--steel-light);
+    border-radius:10px;
+    padding:14px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    box-shadow:0 8px 24px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.03);
+    margin-bottom:14px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    background:var(--fanuc-yellow);
+    color:#141414;
+    font-weight:800;
+    font-size:13px;
+    letter-spacing:.06em;
+    padding:6px 10px;
+    border-radius:4px;
+  }
+  .brand-text{line-height:1.15;}
+  .brand-text .t1{font-weight:800;font-size:16px;letter-spacing:.02em;}
+  .brand-text .t2{font-size:11.5px;color:var(--text-mid);}
+
+  .runbar{display:flex;align-items:center;gap:10px;}
+  .runbar button{
+    font-family:'Archivo',sans-serif;
+    font-weight:700;
+    font-size:12.5px;
+    letter-spacing:.04em;
+    padding:9px 16px;
+    border-radius:5px;
+    border:1px solid var(--steel-light);
+    background:var(--steel);
+    color:var(--text-mid);
+    cursor:pointer;
+    transition:.15s;
+  }
+  .runbar button.active.run{background:var(--live-dim);border-color:var(--live);color:var(--live);}
+  .runbar button.active.stop{background:var(--alarm-dim);border-color:var(--alarm);color:var(--alarm);}
+  .runbar button:hover{filter:brightness(1.15);}
+
+  .scan-led{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-mid);}
+  .led{width:8px;height:8px;border-radius:50%;background:var(--steel-light);}
+  .led.on{background:var(--live);box-shadow:0 0 8px var(--live);}
+
+  /* MAIN GRID */
+  .grid{
+    display:grid;
+    grid-template-columns:220px 1fr;
+    gap:14px;
+  }
+  @media (max-width:820px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--bg-panel);
+    border:1px solid var(--steel);
+    border-radius:8px;
+    padding:14px;
+  }
+  .panel h3{
+    margin:0 0 12px;
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--fanuc-yellow-dim);
+    border-bottom:1px solid var(--steel);
+    padding-bottom:8px;
+  }
+
+  /* IO panel */
+  .io-group{margin-bottom:16px;}
+  .io-group .glabel{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  .io-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:7px 0;border-bottom:1px dashed rgba(255,255,255,.05);
+    gap:8px;
+  }
+  .io-row:last-child{border-bottom:none;}
+  .io-addr{font-size:12px;color:var(--text-mid);width:44px;}
+  .io-name{font-size:11.5px;color:var(--text-hi);flex:1;}
+  .switch{
+    width:38px;height:20px;border-radius:11px;
+    background:var(--steel);border:1px solid var(--steel-light);
+    position:relative;cursor:pointer;flex-shrink:0;
+    transition:.15s;
+  }
+  .switch.on{background:var(--live-dim);border-color:var(--live);}
+  .switch .knob{
+    width:14px;height:14px;border-radius:50%;background:var(--text-dim);
+    position:absolute;top:2px;left:2px;transition:.15s;
+  }
+  .switch.on .knob{left:20px;background:var(--live);box-shadow:0 0 6px var(--live);}
+  .pulse-btn{
+    width:38px;height:24px;border-radius:5px;
+    background:var(--steel);border:1px solid var(--steel-light);
+    color:var(--text-mid);font-size:9px;font-weight:700;
+    cursor:pointer;user-select:none;
+  }
+  .pulse-btn:active,.pulse-btn.on{background:var(--live-dim);border-color:var(--live);color:var(--live);}
+  .pulse-btn.estop{background:var(--alarm-dim);border-color:var(--alarm);color:var(--alarm);}
+  .pulse-btn.estop.on{background:var(--alarm);color:#1a1a1a;}
+
+  .out-dot{width:11px;height:11px;border-radius:50%;background:var(--steel);border:1px solid var(--steel-light);flex-shrink:0;}
+  .out-dot.on{background:var(--live);box-shadow:0 0 8px var(--live);border-color:var(--live);}
+
+  /* Ladder area */
+  .ladder-scroll{overflow-x:auto;}
+  svg text{font-family:'JetBrains Mono',monospace;}
+  .rung-label{fill:var(--text-dim);font-size:10px;}
+  .comment{fill:var(--text-mid);font-size:10.5px;font-family:'Archivo',sans-serif;}
+
+  footer{
+    text-align:center;color:var(--text-dim);font-size:11px;margin-top:18px;letter-spacing:.03em;
+  }
+  .status-strip{
+    display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;
+  }
+  .status-chip{
+    display:flex;align-items:center;gap:7px;
+    background:var(--bg-panel);border:1px solid var(--steel);
+    padding:7px 11px;border-radius:6px;font-size:11px;color:var(--text-mid);
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <div class="bezel">
+    <div class="brand">
+      <div class="brand-mark">PMC</div>
+      <div class="brand-text">
+        <div class="t1">Simulador de Lógica Ladder — Serie 0i</div>
+        <div class="t2 mono">PMC-SIM &nbsp;·&nbsp; canal secuenciador de máquina</div>
+      </div>
+    </div>
+    <div class="runbar">
+      <div class="scan-led"><span class="led" id="scanLed"></span><span class="mono" id="scanTime">SCAN 0 ms</span></div>
+      <button id="btnRun" class="active run">▶ RUN</button>
+      <button id="btnStop">■ STOP</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- IO PANEL -->
+    <div class="panel">
+      <h3>Entradas (X)</h3>
+      <div class="io-group" id="inputList"></div>
+
+      <h3>Salidas (Y)</h3>
+      <div class="io-group" id="outputList"></div>
+    </div>
+
+    <!-- LADDER DIAGRAM -->
+    <div class="panel">
+      <h3>Diagrama Ladder — programa activo</h3>
+      <div class="ladder-scroll">
+        <svg id="ladderSvg" width="900" height="720" viewBox="0 0 900 720"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-strip" id="statusStrip"></div>
+
+  <footer>Simulación educativa de programación PMC estilo FANUC (X = entrada, Y = salida, R = relé interno, T = temporizador, C = contador) · No conectado a un CNC real</footer>
+</div>
+
+<script>
+/* ============================================================
+   MODELO DE DATOS — direcciones estilo PMC de FANUC
+   ============================================================ */
+const state = {
+  running: true,
+  scanCount: 0,
+  X: { X001:false, X002:false, X003:false, X004:false, X005:false },
+  Y: { Y001:false, Y002:false, Y003:false, Y004:false },
+  R: { R001:false, R002:false },
+  T: { T001:{acc:0, preset:3.0, dn:false, timing:false} },
+  C: { C001:{acc:0, preset:5, dn:false, lastCount:false} }
+};
+
+const ioMeta = {
+  X001:{label:'Marcha (Start)', type:'pulse'},
+  X002:{label:'Paro (Stop)', type:'pulse'},
+  X003:{label:'Pulso de conteo', type:'pulse'},
+  X004:{label:'Reset contador', type:'pulse'},
+  X005:{label:'Paro de emergencia', type:'estop'},
+  Y001:{label:'Motor en marcha'},
+  Y002:{label:'Lámpara "Listo"'},
+  Y003:{label:'Ciclo completo'},
+  Y004:{label:'Alarma general'}
+};
+
+/* ============================================================
+   PROGRAMA — 5 renglones (rungs) representativos de un PMC
+   Cada renglón: paths = lista de grupos AND; el renglón es
+   verdadero si al menos un grupo es verdadero (lógica OR de ANDs)
+   ============================================================ */
+function getBit(addr){
+  const bank = addr[0];
+  if(bank==='X') return state.X[addr];
+  if(bank==='Y') return state.Y[addr];
+  if(bank==='R') return state.R[addr];
+  if(bank==='T') return state.T[addr].dn;
+  if(bank==='C') return state.C[addr].dn;
+  return false;
+}
+
+const program = [
+  {
+    id:'RUNG 1',
+    comment:'Circuito de arranque con sello (start/stop) — no afectado por E-STOP',
+    paths:[[{addr:'X001'},{addr:'X002',neg:true}], [{addr:'R001'},{addr:'X002',neg:true}]],
+    coil:{addr:'R001', type:'OUT'}
+  },
+  {
+    id:'RUNG 2',
+    comment:'El paro de emergencia corta la salida del motor de inmediato',
+    paths:[[{addr:'R001'},{addr:'X005',neg:true}]],
+    coil:{addr:'Y001', type:'OUT'}
+  },
+  {
+    id:'RUNG 3',
+    comment:'Temporizador TON — 3.0 s de retardo tras arrancar el motor',
+    paths:[[{addr:'Y001'}]],
+    timer:{addr:'T001'}
+  },
+  {
+    id:'RUNG 4',
+    comment:'Lámpara "Listo" se enciende cuando el temporizador termina',
+    paths:[[{addr:'T001'}]],
+    coil:{addr:'Y002', type:'OUT'}
+  },
+  {
+    id:'RUNG 5',
+    comment:'Contador CTU — cuenta pulsos de X003, reset con X004',
+    paths:[[{addr:'X003'}]],
+    counter:{addr:'C001', reset:'X004'}
+  },
+  {
+    id:'RUNG 6',
+    comment:'Ciclo completo cuando el contador llega a su preset',
+    paths:[[{addr:'C001'}]],
+    coil:{addr:'Y003', type:'OUT'}
+  },
+  {
+    id:'RUNG 7',
+    comment:'Alarma general si se presiona el paro de emergencia',
+    paths:[[{addr:'X005'}]],
+    coil:{addr:'Y004', type:'OUT'}
+  }
+];
+
+/* ============================================================
+   MOTOR DE ESCANEO — evalúa todos los renglones en orden
+   ============================================================ */
+function evalPath(path){
+  return path.every(c=>{
+    const v = getBit(c.addr);
+    return c.neg ? !v : v;
+  });
+}
+function evalRung(rung){
+  return rung.paths.some(evalPath);
+}
+
+let lastTick = performance.now();
+
+function scan(){
+  const now = performance.now();
+  const dt = (now - lastTick)/1000;
+  lastTick = now;
+
+  if(!state.running){ render(); return; }
+
+  program.forEach(rung=>{
+    const energized = evalRung(rung);
+
+    if(rung.coil){
+      if(rung.coil.addr[0]==='R') state.R[rung.coil.addr] = energized;
+      if(rung.coil.addr[0]==='Y') state.Y[rung.coil.addr] = energized;
+    }
+    if(rung.timer){
+      const t = state.T[rung.timer.addr];
+      if(energized){
+        t.timing = true;
+        t.acc = Math.min(t.preset, t.acc + dt);
+        t.dn = t.acc >= t.preset;
+      } else {
+        t.timing = false;
+        t.acc = 0;
+        t.dn = false;
+      }
+    }
+    if(rung.counter){
+      const c = state.C[rung.counter.addr];
+      const resetActive = state.X[rung.counter.reset];
+      if(resetActive){
+        c.acc = 0; c.dn = false; c.lastCount = false;
+      } else {
+        const rising = energized && !c.lastCount;
+        if(rising && c.acc < c.preset) c.acc++;
+        c.lastCount = energized;
+        c.dn = c.acc >= c.preset;
+      }
+    }
+  });
+
+  state.scanCount++;
+  render();
+}
+
+/* ============================================================
+   RENDER — panel de I/O
+   ============================================================ */
+const inputList = document.getElementById('inputList');
+const outputList = document.getElementById('outputList');
+
+function buildIoPanel(){
+  inputList.innerHTML = '';
+  Object.keys(state.X).forEach(addr=>{
+    const meta = ioMeta[addr];
+    const row = document.createElement('div');
+    row.className = 'io-row';
+    const isEstop = meta.type==='estop';
+    row.innerHTML = `
+      <span class="io-addr mono">${addr}</span>
+      <span class="io-name">${meta.label}</span>
+      ${meta.type ? `<button class="pulse-btn ${isEstop?'estop':''}" data-addr="${addr}">${isEstop?'STOP':'PULSO'}</button>`
+                  : `<div class="switch" data-addr="${addr}"><div class="knob"></div></div>`}
+    `;
+    inputList.appendChild(row);
+  });
+
+  outputList.innerHTML = '';
+  Object.keys(state.Y).forEach(addr=>{
+    const meta = ioMeta[addr];
+    const row = document.createElement('div');
+    row.className = 'io-row';
+    row.innerHTML = `
+      <span class="io-addr mono">${addr}</span>
+      <span class="io-name">${meta.label}</span>
+      <div class="out-dot" data-out="${addr}"></div>
+    `;
+    outputList.appendChild(row);
+  });
+
+  // listeners
+  inputList.querySelectorAll('.switch').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const a = el.dataset.addr;
+      state.X[a] = !state.X[a];
+    });
+  });
+  inputList.querySelectorAll('.pulse-btn').forEach(el=>{
+    const a = el.dataset.addr;
+    const press = ()=>{ state.X[a]=true; };
+    const release = ()=>{ state.X[a]=false; };
+    el.addEventListener('mousedown', press);
+    el.addEventListener('touchstart', e=>{e.preventDefault();press();});
+    ['mouseup','mouseleave','touchend'].forEach(ev=>el.addEventListener(ev, release));
+  });
+}
+
+function renderIoState(){
+  inputList.querySelectorAll('.switch').forEach(el=>{
+    el.classList.toggle('on', state.X[el.dataset.addr]);
+  });
+  inputList.querySelectorAll('.pulse-btn').forEach(el=>{
+    el.classList.toggle('on', state.X[el.dataset.addr]);
+  });
+  outputList.querySelectorAll('.out-dot').forEach(el=>{
+    el.classList.toggle('on', state.Y[el.dataset.out]);
+  });
+}
+
+/* ============================================================
+   RENDER — diagrama ladder en SVG
+   ============================================================ */
+const svg = document.getElementById('ladderSvg');
+const RUNG_H = 100;
+const LEFT_X = 40, RIGHT_X = 860;
+svg.setAttribute('height', RUNG_H*program.length + 20);
+svg.setAttribute('viewBox', `0 0 900 ${RUNG_H*program.length + 20}`);
+
+function svgEl(tag, attrs){
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function contactSymbol(x, y, cond, on){
+  const g = svgEl('g', {});
+  const color = on ? 'var(--live)' : 'var(--rail)';
+  g.appendChild(svgEl('line', {x1:x, y1:y-16, x2:x, y2:y+16, stroke:color, 'stroke-width':2.5}));
+  g.appendChild(svgEl('line', {x1:x+12, y1:y-16, x2:x+12, y2:y+16, stroke:color, 'stroke-width':2.5}));
+  if(cond.neg){
+    g.appendChild(svgEl('line', {x1:x, y1:y+16, x2:x+12, y2:y-16, stroke:color, 'stroke-width':1.6}));
+  }
+  const label = svgEl('text', {x:x+6, y:y-22, class:'rung-label', 'text-anchor':'middle'});
+  label.textContent = cond.addr + (cond.neg ? ' (NC)' : ' (NO)');
+  g.appendChild(label);
+  return g;
+}
+
+function coilSymbol(x, y, addr, on){
+  const g = svgEl('g', {});
+  const color = on ? 'var(--live)' : 'var(--rail)';
+  g.appendChild(svgEl('circle', {cx:x, cy:y, r:16, fill:'none', stroke:color, 'stroke-width':2.5}));
+  const label = svgEl('text', {x:x, y:y-24, class:'rung-label', 'text-anchor':'middle'});
+  label.textContent = addr;
+  g.appendChild(label);
+  return g;
+}
+
+function boxSymbol(x, y, addr, sub, on){
+  const g = svgEl('g', {});
+  const color = on ? 'var(--live)' : 'var(--rail)';
+  g.appendChild(svgEl('rect', {x:x-22, y:y-16, width:44, height:32, fill:'none', stroke:color, 'stroke-width':2.5, rx:3}));
+  const t1 = svgEl('text', {x:x, y:y-2, class:'mono', 'text-anchor':'middle', fill:color, 'font-size':11});
+  t1.textContent = addr;
+  const t2 = svgEl('text', {x:x, y:y+12, class:'mono', 'text-anchor':'middle', fill:'var(--text-dim)', 'font-size':9});
+  t2.textContent = sub;
+  g.appendChild(t1); g.appendChild(t2);
+  return g;
+}
+
+function buildLadder(){
+  svg.innerHTML = '';
+  // rails
+  svg.appendChild(svgEl('line', {x1:LEFT_X, y1:6, x2:LEFT_X, y2:RUNG_H*program.length+6, stroke:'var(--rail)', 'stroke-width':3}));
+  svg.appendChild(svgEl('line', {x1:RIGHT_X, y1:6, x2:RIGHT_X, y2:RUNG_H*program.length+6, stroke:'var(--rail)', 'stroke-width':3}));
+
+  program.forEach((rung, i)=>{
+    const y = 55 + i*RUNG_H;
+    const comment = svgEl('text', {x:LEFT_X+4, y:y-38, class:'comment'});
+    comment.textContent = `${rung.id} — ${rung.comment}`;
+    svg.appendChild(comment);
+
+    const midX = 480;
+    // horizontal connector left rail -> contacts
+    svg.appendChild(svgEl('line', {x1:LEFT_X, y1:y, x2:80, y2:y, stroke:'var(--rail)', 'stroke-width':2}));
+
+    let cx = 100;
+    rung._render = rung._render || {};
+    if(rung.paths.length === 1){
+      rung.paths[0].forEach((cond)=>{
+        const v = getBit(cond.addr);
+        const on = cond.neg ? !v : v;
+        svg.appendChild(contactSymbol(cx, y, cond, on));
+        svg.appendChild(svgEl('line', {x1:cx+12, y1:y, x2:cx+70, y2:y, stroke: on ? 'var(--live)':'var(--rail)', 'stroke-width':2}));
+        cx += 70;
+      });
+    } else {
+      // parallel branches (OR of 2 AND groups) - draw as stacked branch
+      const branchYs = [y-22, y+22];
+      svg.appendChild(svgEl('line', {x1:cx, y1:branchYs[0], x2:cx, y2:branchYs[1], stroke:'var(--rail)', 'stroke-width':2}));
+      rung.paths.forEach((path, pi)=>{
+        let bx = cx + 20;
+        const by = branchYs[pi];
+        svg.appendChild(svgEl('line', {x1:cx, y1:by, x2:bx, y2:by, stroke:'var(--rail)', 'stroke-width':2}));
+        path.forEach(cond=>{
+          const v = getBit(cond.addr);
+          const on = cond.neg ? !v : v;
+          svg.appendChild(contactSymbol(bx, by, cond, on));
+          svg.appendChild(svgEl('line', {x1:bx+12, y1:by, x2:bx+64, y2:by, stroke: on?'var(--live)':'var(--rail)', 'stroke-width':2}));
+          bx += 64;
+        });
+        svg.appendChild(svgEl('line', {x1:bx, y1:by, x2:cx+180, y2:by, stroke: evalPath(path)?'var(--live)':'var(--rail)', 'stroke-width':2}));
+      });
+      svg.appendChild(svgEl('line', {x1:cx+180, y1:branchYs[0], x2:cx+180, y2:branchYs[1], stroke:'var(--rail)', 'stroke-width':2}));
+      cx = cx + 180;
+    }
+
+    const energized = evalRung(rung);
+    // connector to output element
+    svg.appendChild(svgEl('line', {x1:cx, y1:y, x2:midX+300, y2:y, stroke: energized?'var(--live)':'var(--rail)', 'stroke-width':2}));
+
+    if(rung.coil){
+      const on = getBit(rung.coil.addr);
+      svg.appendChild(coilSymbol(midX+320, y, rung.coil.addr, on));
+      svg.appendChild(svgEl('line', {x1:midX+336, y1:y, x2:RIGHT_X, y2:y, stroke: on?'var(--live)':'var(--rail)', 'stroke-width':2}));
+    }
+    if(rung.timer){
+      const t = state.T[rung.timer.addr];
+      svg.appendChild(boxSymbol(midX+320, y, rung.timer.addr, `TON ${t.acc.toFixed(1)}/${t.preset}s`, t.dn));
+      svg.appendChild(svgEl('line', {x1:midX+342, y1:y, x2:RIGHT_X, y2:y, stroke: t.dn?'var(--live)':'var(--rail)', 'stroke-width':2}));
+    }
+    if(rung.counter){
+      const c = state.C[rung.counter.addr];
+      svg.appendChild(boxSymbol(midX+320, y, rung.counter.addr, `CTU ${c.acc}/${c.preset}`, c.dn));
+      svg.appendChild(svgEl('line', {x1:midX+342, y1:y, x2:RIGHT_X, y2:y, stroke: c.dn?'var(--live)':'var(--rail)', 'stroke-width':2}));
+    }
+  });
+}
+
+/* ============================================================
+   STATUS STRIP
+   ============================================================ */
+function renderStatus(){
+  const strip = document.getElementById('statusStrip');
+  const t = state.T.T001;
+  const c = state.C.C001;
+  strip.innerHTML = `
+    <div class="status-chip mono">R001 (sello) : ${state.R.R001 ? 'ON':'off'}</div>
+    <div class="status-chip mono">T001 : ${t.acc.toFixed(1)}s / ${t.preset}s ${t.dn?'(DN)':''}</div>
+    <div class="status-chip mono">C001 : ${c.acc} / ${c.preset} ${c.dn?'(DN)':''}</div>
+    <div class="status-chip mono">Ciclos de escaneo : ${state.scanCount}</div>
+  `;
+}
+
+/* ============================================================
+   RENDER GLOBAL + LOOP
+   ============================================================ */
+function render(){
+  renderIoState();
+  buildLadder();
+  renderStatus();
+  document.getElementById('scanLed').classList.toggle('on', state.running);
+  document.getElementById('scanTime').textContent = `SCAN ${state.running ? '8' : '0'} ms`;
+}
+
+document.getElementById('btnRun').addEventListener('click', ()=>{
+  state.running = true;
+  document.getElementById('btnRun').classList.add('active');
+  document.getElementById('btnStop').classList.remove('active');
+});
+document.getElementById('btnStop').addEventListener('click', ()=>{
+  state.running = false;
+  document.getElementById('btnStop').classList.add('active');
+  document.getElementById('btnRun').classList.remove('active');
+});
+
+buildIoPanel();
+render();
+setInterval(scan, 120);
+</script>
+</body>
+</html>
